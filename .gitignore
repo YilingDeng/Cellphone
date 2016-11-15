@@ -2,6 +2,7 @@
 .Rhistory
 
 # R data files from past sessions
+*.RData
 *.Rproj
 .Rproj.user
 
