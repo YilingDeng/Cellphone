@@ -73,10 +73,14 @@ for (i in unique(location$imei)) {
 }
 rm(i, locationOne, locationClust, location)
 
-locationNew[, c("x", "y") := .(mean(x), mean(y)), by = .(imei, Clust)]
+locationNew[, c("x", "y", "count") := .(mean(x), mean(y), .N), by = .(imei, Clust)]
 setkey(locationNew, imei, day, hour)
 
-#  É¾³ý1´ÎµÄµØÖ·
+#  É¾³ý³öÏÖ1´Î1Ð¡Ê±µÄµØÖ·
+locationNew[, hourLag := shift(hour, type = "lag"), by = imei]
+locationNew[, duration := ifelse(hour > hourLag, hour - hourLag, hour - hourLag + 24)]
+locationNew <- locationNew[duration > 1 | count > 1, ]
+locationNew[, c("hourLag", "count") := NULL]
 
 # home
 home <- locationNew[(yday %in% c(362, 363, 364, 365, 4, 5, 6) & hour %in% c(19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6)) | yday %in% c(361, 1, 2, 3), ]
@@ -103,7 +107,9 @@ ggplot(data = od, aes(x = x, y = y, group = type)) + geom_point(aes(color = type
 
 # insert start home
 homeStart <- data.table(lng = rep(NA, 11), lat = rep(NA, 11), day = c("20151227", "20151228","20151229","20151230","20151231","20160101","20160102","20160103","20160104","20160105","20160106"), 
-                      yday = c(361, 362, 363, 364, 365, 1, 2, 3, 4, 5, 6), wday = c(7, 1, 2, 3, 4, 5, 6, 7, 1, 2, 3), hour = rep(3, 11), work = rep(NA, 11))
+                      yday = c(361, 362, 363, 364, 365, 1, 2, 3, 4, 5, 6), 
+                      wday = c(7, 1, 2, 3, 4, 5, 6, 7, 1, 2, 3), hour = rep(3, 11), 
+                      work = rep(NA, 11), duration = rep(NA, 11))
 homeRep <- home[rep(seq(.N), 11), ]
 setkey(homeRep, imei)
 homeStart <- cbind(homeRep, homeStart)
@@ -203,32 +209,44 @@ rm(i, Activity)
 locationNew[, c("TourIndex", "TourDiff") := NULL]
 locationNew <- locationNew[is.na(motif) | motif != "1", ] # É¾³ýÖ»ÓÐ1¸öactivtyµÄtour
 
+# generate motif type
+locationNew[!is.na(motif), motifType1 := ifelse(nchar(motif) > 3, "C", "S")] 
+locationNew[!is.na(motif), motifType2 := ifelse(grepl("2", motif), "HW", "HO")]
+locationNew[!is.na(motif), motifType := paste0(motifType1, motifType2)] 
+locationNew[, c("motifType1", "motifType2") := .(NULL, NULL)]
+
 # view motif
 sort(table(locationNew[, motif]))
 length(locationNew[!is.na(motif), motif]) # 11485
 length(locationNew[!is.na(motif) & grepl("2", motif), motif]) # 4665
 length(unique(locationNew[!is.na(motif), motif])) # 506
 length(unique(locationNew[!is.na(motif) & grepl("2", motif), motif])) # 374
+table(locationNew[, motifType]) # CHO CHW SHO SHW 2366 2499 3907 2058
 
 # generate pattern
-locationNew[!is.na(motif), motifType := ifelse(grepl("2", motif), )]
+locationNew[!is.na(motifType), pattern := paste(motifType, collapse = '-'), by =.(imei, modelDay)]
+locationNew[hour != 3, pattern := NA]
 
 # view pattern
+sort(table(locationNew[, pattern]))
+
 
 # Ñù±¾ "20151228" ²»ÄÜÍêÈ«ÅÅ³ýÖÐÍ¾µã
 ggplot(data = locationNew[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, ], aes(x = x, y = y)) + 
   geom_point() + geom_path() + geom_text(aes(label = hour), size = 4)
 locationNew[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, ]
-unique(locationNew[imei == "00004822f78c4bd256cefccc4b82832f" & day == 362, .(x, y)])
+unique(locationNew[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, .(x, y)])
 
-
-
-
-
-
+# read usuage
 usuage <- fread("D:/data/ÁªÍ¨Êý¾Ý/³õÈüÊý¾Ý/ÎÖ+Êý¾Ý´óÈüÊý¾Ý.csv")
 usuage <- unique(usuage)
+# IMEI                 ÔÂÒøÐÐ¶ÌÐÅÍ¨Öª´ÎÊý   Ê¹ÓÃÆû³µÀàAPPµÄPVÊý  Ê¹ÓÃÀí²ÆÀàAPPµÄPVÊý  Ê¹ÓÃ¹ÉÆ±ÀàAPPµÄPVÊý 
+# ½»ÍùÈ¦¹æÄ£           ÊÇ·ñÓÐ¿çÊ¡ÐÐÎª       ÊÇ·ñÓÐ³ö¹úÐÐÎª       ·ÃÎÊ¹ºÎïÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊITÀàÍøÕ¾µÄ´ÎÊý  
+# ·ÃÎÊ²ÍÒûÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊ·¿²úÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊ½¡¿µÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊ½ðÈÚÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊÂÃÓÎÀàÍøÕ¾µÄ´ÎÊý
+# ·ÃÎÊÌåÓýÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊÆû³µÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊÊ±ÊÂÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊÉç»áÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊÎÄÓéÀàÍøÕ¾µÄ´ÎÊý
+# ·ÃÎÊÕÐÆ¸ÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊ½ÌÓýÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊÆäËûÀàÍøÕ¾µÄ´ÎÊý ·ÃÎÊÍøÓÎÀàÍøÕ¾µÄ´ÎÊý
 
+# read brand ÎÞ·¨¶ÔÓ¦
 brand <- data.table()
 for (i in c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")) {
     temp <- fread(paste0("D:/data/ÁªÍ¨Êý¾Ý/³õÈüÊý¾Ý/Êý¾Ý´óÈü2015", i, ".csv"))
@@ -240,5 +258,4 @@ brand[, c("Íø±ð", "ÐÔ±ð", "ÄêÁäÖµ¶Î", "ARPUÖµ¶Î", "ÖÕ¶ËÆ·ÅÆ", "ÖÕ¶ËÐÍºÅ", "Á÷Á¿Ê
           list(as.factor(Íø±ð), as.factor(ÐÔ±ð), as.factor(ÄêÁäÖµ¶Î), as.factor(ARPUÖµ¶Î), 
                as.factor(ÖÕ¶ËÆ·ÅÆ), as.factor(ÖÕ¶ËÐÍºÅ), as.factor(Á÷Á¿Ê¹ÓÃÁ¿), 
                as.integer(ÓïÒôÍ¨»°Ê±³¤), as.integer(¶ÌÐÅÌõÊý))]
-
 str(brand)
