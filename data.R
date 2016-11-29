@@ -23,20 +23,18 @@ save.image()
 day <- strptime(location$V1, "%Y%m%d")
 location[, c("yday", "wday") := .(yday(day), ifelse(wday(day) == 1, 7, wday(day) - 1))]
 
-lng <- data.table(na.omit(gather(location[, .(day = V1, yday, wday, imei = V2, '0' = V3, 
-                                      '1' = V5, '2' = V7, '3' = V9, '4' = V11, '5' = V13, 
-                                      '6' = V15, '7' = V17, '8' = V19, '9' = V21, 
-                                      '10' = V23, '11' = V25, '12' = V27, '13' = V29, 
-                                      '14' = V31, '15' = V33, '16' = V35, '17' = V37, 
-                                      '18' = V39, '19' = V41, '20' = V43, '21' = V45, 
-                                      '22' = V47, '23' = V49)], "hour", "lng", 5 : 28)))
-lat <- data.table(na.omit(gather(location[, .(day = V1, yday, wday, imei = V2, '0' = V4, 
-                                      '1' = V6, '2' = V8, '3' = V10, '4' = V12, '5' = V14, 
-                                      '6' = V16, '7' = V18, '8' = V20, '9' = V22, 
-                                      '10' = V24, '11' = V26, '12' = V28, '13' = V30, 
-                                      '14' = V32, '15' = V34, '16' = V36, '17' = V38, 
-                                      '18' = V40, '19' = V42, '20' = V44, '21' = V46, 
-                                      '22' = V48, '23' = V50)], "hour", "lat", 5 : 28)))
+lng <- melt(location[, .(day = V1, yday, wday, imei = V2, '0' = V3, '1' = V5, '2' = V7, 
+                         '3' = V9, '4' = V11, '5' = V13, '6' = V15, '7' = V17, '8' = V19, 
+                         '9' = V21, '10' = V23, '11' = V25, '12' = V27, '13' = V29, 
+                         '14' = V31, '15' = V33, '16' = V35, '17' = V37, '18' = V39, 
+                         '19' = V41, '20' = V43, '21' = V45, '22' = V47, '23' = V49)], 
+            id = c("imei", "day", "yday", "wday"), variable.name = "hour", value.name = "lng", na.rm = TRUE)
+lat <- melt(location[, .(day = V1, yday, wday, imei = V2, '0' = V4, '1' = V6, '2' = V8, 
+                         '3' = V10, '4' = V12, '5' = V14, '6' = V16, '7' = V18, '8' = V20, 
+                         '9' = V22, '10' = V24, '11' = V26, '12' = V28, '13' = V30,
+                         '14' = V32, '15' = V34, '16' = V36, '17' = V38, '18' = V40, 
+                         '19' = V42, '20' = V44, '21' = V46, '22' = V48, '23' = V50)], 
+            id = c("imei", "day", "yday", "wday"), variable.name = "hour", value.name = "lat", na.rm = TRUE)
 location <- merge(lng, lat, by = c("imei", "day", "yday", "wday", "hour"))
 location[, hour := as.integer(hour)]
 setkey(location, imei, day, hour)
