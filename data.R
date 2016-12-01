@@ -56,49 +56,40 @@ setkey(location, imei, day, hour)
 # clust
 getClust <- function(Coord) {
     Coord <- data.frame(x = Coord[, x], y = Coord[, y])
-    if(nrow(Coord) == 1) return(1)
+    if(nrow(Coord) == 1) return(1L)
     Clust <- hclust(dist(Coord), method = "complete")
     Clust <- cutree(Clust, h = 400)
     return(Clust)
 }
-
-locationNew <- data.table()
-for (i in unique(location$imei)) {
-    locationOne <- location[imei == i, ]
-    locationClust <- data.table(Clust = getClust(locationOne))
-    locationOne <- cbind(locationOne, locationClust)
-    locationNew <- rbind(locationNew, locationOne)
-}
-rm(i, locationOne, locationClust, location)
-
-locationNew[, c("x", "y", "count") := .(mean(x), mean(y), .N), by = .(imei, Clust)]
-setkey(locationNew, imei, day, hour)
+location[, Clust := getClust(.SD), by = imei]
+location[, c("x", "y", "count") := .(mean(x), mean(y), .N), by = .(imei, Clust)]
+setkey(location, imei, day, hour)
 
 #  删除出现1次1小时的地址
-locationNew[, hourLag := shift(hour, type = "lag"), by = imei]
-locationNew[, duration := ifelse(hour > hourLag, hour - hourLag, hour - hourLag + 24)]
-locationNew <- locationNew[duration > 1 | count > 1, ]
-locationNew[, c("hourLag", "count") := NULL]
+location[, hourLag := shift(hour, type = "lag"), by = imei]
+location[, duration := ifelse(hour > hourLag, hour - hourLag, hour - hourLag + 24)]
+location <- location[duration > 1 | count > 1, ]
+location[, c("hourLag", "count") := NULL]
 
 # home
-home <- locationNew[(yday %in% c(362, 363, 364, 365, 4, 5, 6) & hour %in% c(19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6)) | yday %in% c(361, 1, 2, 3), ]
+home <- location[(yday %in% c(362, 363, 364, 365, 4, 5, 6) & hour %in% c(19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6)) | yday %in% c(361, 1, 2, 3), ]
 home <- home[, .(home = .N), by = .(imei, Clust, x, y)]
 setkey(home, imei, home)
 home <- unique(home, by = "imei", fromLast = TRUE)
 table(home$home)
-locationNew <- merge(locationNew, home[, .(imei, Clust, home)], by = c("imei", "Clust"), all.x = TRUE)
+location <- merge(location, home[, .(imei, Clust, home)], by = c("imei", "Clust"), all.x = TRUE)
 
 # work
-work <- locationNew[(yday %in% c(362, 363, 364, 365, 4, 5, 6) & hour %in% c(8, 9, 10, 14, 15, 16)) & is.na(home), ]
+work <- location[(yday %in% c(362, 363, 364, 365, 4, 5, 6) & hour %in% c(8, 9, 10, 14, 15, 16)) & is.na(home), ]
 work <- work[, .(work = .N), by = .(imei, Clust, x, y)]
 setkey(work, imei, work)
 work <- unique(work, by = "imei", fromLast = TRUE)
 table(work$work)
-locationNew <- merge(locationNew, work[, .(imei, Clust, work)], by = c("imei", "Clust"), all.x = TRUE)
-setkey(locationNew, imei, day, hour)
+location <- merge(location, work[, .(imei, Clust, work)], by = c("imei", "Clust"), all.x = TRUE)
+setkey(location, imei, day, hour)
 
 # OD 计算通勤距离，分析
-od <- locationNew[!is.na(home) | !is.na(work), .(imei, x, y, home, work)]
+od <- location[!is.na(home) | !is.na(work), .(imei, x, y, home, work)]
 od <- unique(od)
 od[, type := ifelse(is.na(work), "home", "work")]
 ggplot(data = od, aes(x = x, y = y, group = type)) + geom_point(aes(color = type)) + geom_path(alpha = 0.2)
@@ -112,27 +103,27 @@ homeRep <- home[rep(seq(.N), 11), ]
 setkey(homeRep, imei)
 homeStart <- cbind(homeRep, homeStart)
 withHome <- home[, imei] # remove imei which can not detect home
-locationNew <- rbind(locationNew[imei %in% withHome & hour != 3, ], homeStart)
+location <- rbind(location[imei %in% withHome & hour != 3, ], homeStart)
 rm(homeStart, homeRep, withHome)
 
 # create model day
-setkey(locationNew, imei, day, hour)
-locationNew[, modelDay := ifelse(hour %in% c(0, 1, 2), yday - 1, yday)]
-locationNew[modelDay == 0, modelDay := 365]
-locationNew <- locationNew[modelDay != 360, ] # yday 6 特别少
+setkey(location, imei, day, hour)
+location[, modelDay := ifelse(hour %in% c(0, 1, 2), yday - 1, yday)]
+location[modelDay == 0, modelDay := 365]
+location <- location[modelDay != 360, ] # yday 6 特别少
 
 # remove duplicate location 1/2
-setkey(locationNew, imei, day, hour)
-locationNew[, ClustLag := shift(Clust, type = "lag"), by = .(imei, modelDay)]
-locationNew[, ClustDiff := .(ifelse(Clust == ClustLag, 0, 1))]
-locationNew[is.na(ClustDiff), ClustDiff := 0]
-locationNew[, ClustIndex := cumsum(ClustDiff), by = .(imei, modelDay)]
-locationNew <- unique(locationNew, by = c("imei", "modelDay", "ClustIndex"), fromFirst = TRUE)
-locationNew[, c("ClustLag", "ClustDiff", "ClustIndex") := NULL]
+setkey(location, imei, day, hour)
+location[, ClustLag := shift(Clust, type = "lag"), by = .(imei, modelDay)]
+location[, ClustDiff := .(ifelse(Clust == ClustLag, 0, 1))]
+location[is.na(ClustDiff), ClustDiff := 0]
+location[, ClustIndex := cumsum(ClustDiff), by = .(imei, modelDay)]
+location <- unique(location, by = c("imei", "modelDay", "ClustIndex"), fromFirst = TRUE)
+location[, c("ClustLag", "ClustDiff", "ClustIndex") := NULL]
 
 # generate tour
-locationNew[, TourIndex := ifelse(is.na(home), 0, 1), by = .(imei, modelDay)]
-locationNew[, tour := cumsum(TourIndex), by = .(imei, modelDay)]
+location[, TourIndex := ifelse(is.na(home), 0, 1), by = .(imei, modelDay)]
+location[, tour := cumsum(TourIndex), by = .(imei, modelDay)]
 
 # generate activtiy & H motif
 getActivity <- function(Clust) {
@@ -146,7 +137,6 @@ getActivity <- function(Clust) {
     for (i in 2 : length(Clust)) {
       if (Clust[i] %in% Clust[1 : i - 1]) {
         Activity[i] <- Activity[match(Clust[i], Clust[1 : i - 1])]
-        
       }
       else {
         j <- j + 1
@@ -157,16 +147,13 @@ getActivity <- function(Clust) {
   }
 }
 
-setkey(locationNew, imei, day, hour)
-locationNew[, TourDiff := cumsum(TourIndex)]
-for (i in 1 : max(locationNew[, TourDiff])) {
-  Activity <- getActivity(locationNew[TourDiff == i, Clust])
-  locationNew[TourDiff == i, activity := Activity]
-  locationNew[TourDiff == i & TourIndex == 1, motif := paste(Activity, collapse = '-')]
-}
-rm(i, Activity)
-locationNew[, c("TourIndex", "TourDiff") := NULL]
-locationNew <- locationNew[is.na(motif) | motif != "1", ] # 删除只有1个activty的tour
+setkey(location, imei, day, hour)
+location[, TourDiff := cumsum(TourIndex)]
+location[, activity := getActivity(.SD), by = TourDiff]
+location[, motif := paste(activity, collapse = '-'), by = TourDiff]
+location[TourIndex != 1, motif := NA]
+location[, c("TourIndex", "TourDiff") := NULL]
+location <- location[is.na(motif) | motif != "1", ] # 删除只有1个activty的tour
 
 # generate activity & HW/HO motif
 getActivity <- function(Clust) {
@@ -184,7 +171,6 @@ getActivity <- function(Clust) {
       else {
         if (Clust[i, Clust] %in% Clust[1 : i - 1, Clust]) {
           Activity[i] <- Activity[match(Clust[i, Clust], Clust[1 : i - 1, Clust])]
-          
         }
         else {
           j <- j + 1
@@ -196,44 +182,41 @@ getActivity <- function(Clust) {
   }
 }
 
-setkey(locationNew, imei, day, hour)
-locationNew[, TourDiff := cumsum(TourIndex)]
-for (i in 1 : max(locationNew[, TourDiff])) {
-  Activity <- getActivity(locationNew[TourDiff == i, .(Clust, work)])
-  locationNew[TourDiff == i, activity := Activity]
-  locationNew[TourDiff == i & TourIndex == 1, motif := paste(Activity, collapse = '-')]
-}
-rm(i, Activity)
-locationNew[, c("TourIndex", "TourDiff") := NULL]
-locationNew <- locationNew[is.na(motif) | motif != "1", ] # 删除只有1个activty的tour
+setkey(location, imei, day, hour)
+location[, TourDiff := cumsum(TourIndex)]
+location[, activity := getActivity(.SD), by = TourDiff]
+location[, motif := paste(activity, collapse = '-'), by = TourDiff]
+location[TourIndex != 1, motif := NA]
+location[, c("TourIndex", "TourDiff") := NULL]
+location <- location[is.na(motif) | motif != "1", ] # 删除只有1个activty的tour
 
 # generate motif type
-locationNew[!is.na(motif), motifType1 := ifelse(nchar(motif) > 3, "C", "S")] 
-locationNew[!is.na(motif), motifType2 := ifelse(grepl("2", motif), "HW", "HO")]
-locationNew[!is.na(motif), motifType := paste0(motifType1, motifType2)] 
-locationNew[, c("motifType1", "motifType2") := .(NULL, NULL)]
+location[!is.na(motif), motifType1 := ifelse(nchar(motif) > 3, "C", "S")] 
+location[!is.na(motif), motifType2 := ifelse(grepl("2", motif), "HW", "HO")]
+location[!is.na(motif), motifType := paste0(motifType1, motifType2)] 
+location[, c("motifType1", "motifType2") := .(NULL, NULL)]
 
 # view motif
-sort(table(locationNew[, motif]))
-length(locationNew[!is.na(motif), motif]) # 11485
-length(locationNew[!is.na(motif) & grepl("2", motif), motif]) # 4665
-length(unique(locationNew[!is.na(motif), motif])) # 506
-length(unique(locationNew[!is.na(motif) & grepl("2", motif), motif])) # 374
-table(locationNew[, motifType]) # CHO CHW SHO SHW 2366 2499 3907 2058
+sort(table(location[, motif]))
+length(location[!is.na(motif), motif]) # 11485
+length(location[!is.na(motif) & grepl("2", motif), motif]) # 4665
+length(unique(location[!is.na(motif), motif])) # 506
+length(unique(location[!is.na(motif) & grepl("2", motif), motif])) # 374
+table(location[, motifType]) # CHO CHW SHO SHW 2366 2499 3907 2058
 
 # generate pattern
-locationNew[!is.na(motifType), pattern := paste(motifType, collapse = '-'), by =.(imei, modelDay)]
-locationNew[hour != 3, pattern := NA]
+location[!is.na(motifType), pattern := paste(motifType, collapse = '-'), by =.(imei, modelDay)]
+location[hour != 3, pattern := NA]
 
 # view pattern
-sort(table(locationNew[, pattern]))
+sort(table(location[, pattern]))
 
 
 # 样本 "20151228" 不能完全排除中途点
-ggplot(data = locationNew[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, ], aes(x = x, y = y)) + 
+ggplot(data = location[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, ], aes(x = x, y = y)) + 
   geom_point() + geom_path() + geom_text(aes(label = hour), size = 4)
-locationNew[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, ]
-unique(locationNew[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, .(x, y)])
+location[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, ]
+unique(location[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, .(x, y)])
 
 # read usuage
 usuage <- fread("D:/data/联通数据/初赛数据/沃+数据大赛数据.csv")
