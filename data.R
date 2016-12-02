@@ -1,5 +1,4 @@
 library(data.table)
-library(tidyr)
 library(ggplot2)
 library(rgdal)
 library(rgeos)
@@ -209,7 +208,8 @@ location[!is.na(motifType), pattern := paste(motifType, collapse = '-'), by =.(i
 location[hour != 3, pattern := NA]
 
 # view pattern
-sort(table(location[, pattern]))
+sort(table(location[, pattern]), decreasing = TRUE)
+save.image("final.RData")
 
 
 # 样本 "20151228" 不能完全排除中途点
