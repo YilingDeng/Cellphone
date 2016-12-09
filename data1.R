@@ -272,6 +272,7 @@ getPattern <- function(Clust) {
 setkey(location, imei, day, hour)
 location[, activity := getPattern(.SD), by = .(imei, modelDay)]
 location[, pattern := paste(activity, collapse = '-'), by = .(imei, modelDay)]
+location[, activity := NULL]
 location[hour != 3, pattern := NA]
 
 # generate pattern type
@@ -292,7 +293,7 @@ location[!is.na(tour) & grepl("2", tour), .N] # work-tour数量
 location[!is.na(tour) & grepl("2", tour), .N, by = modelDay] # work-tour数量 by modelDay
 length(unique(location[!is.na(tour), tour])) # tour种类数
 length(unique(location[!is.na(tour) & grepl("2", tour), tour])) # work-tour种类数
-table(location[, tourType]) # CHO CHW SHO SHW 1545 788 2287 662
+table(location[, tourType]) # CHO CHW SHO SHW
 
 # view trips
 mean(location[, .N, by = .(imei, modelDay)][N == 1, N := 0][, N])
@@ -301,8 +302,7 @@ location[, .N, by = .(imei, modelDay)][N == 1, N := 0][, mean(N), by = modelDay]
 table(location[, .N, by = .(imei, modelDay)][N == 1, N := 0][, N])
 ggplot(data = location[, .N, by = .(imei, modelDay)][N == 1, N := 0], aes(x = N)) + geom_histogram(binwidth = 1)
 
-# H VS W VS O
-location[is.na(home), .N]
+
 
 # 样本 "20151228" 不能完全排除中途点
 ggplot(data = location[imei == "00004822f78c4bd256cefccc4b82832f" & modelDay == 362, ], aes(x = x, y = y)) + 

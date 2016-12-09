@@ -4,8 +4,6 @@ library(rgdal)
 library(rgeos)
 library(fastcluster)
 
-memory.limit()
-memory.size(max = FALSE)
 # 2015.12.27 - 2016.1.6
 # 27日361 28一362 29二363 30三364 31四365 1五休1 2六休2 3日休3 4一4 5二5 6三6
 
@@ -109,9 +107,9 @@ rm(homeStart, homeRep, withHome)
 setkey(location, imei, day, hour)
 location[, modelDay := ifelse(hour %in% c(0, 1, 2), yday - 1, yday)]
 location[modelDay == 0, modelDay := 365]
-location <- location[modelDay != 360, ] # yday 6 特别少
+location <- location[modelDay != 360 & modelDay != 6, ] # yday 6 特别少
 
-# remove duplicate location 1/2
+# remove duplicate location
 setkey(location, imei, day, hour)
 location[, ClustLag := shift(Clust, type = "lag"), by = .(imei, modelDay)]
 location[, ClustDiff := .(ifelse(Clust == ClustLag, 0, 1))]
@@ -122,9 +120,9 @@ location[, c("ClustLag", "ClustDiff", "ClustIndex") := NULL]
 
 # generate tour
 location[, TourIndex := ifelse(is.na(home), 0, 1), by = .(imei, modelDay)]
-location[, tour := cumsum(TourIndex), by = .(imei, modelDay)]
+location[, tourNum := cumsum(TourIndex), by = .(imei, modelDay)]
 
-# generate activtiy & H motif
+# generate H tour (不采用)
 getActivity <- function(Clust) {
   Activity <- vector()
   Activity[1] <- 1
@@ -148,13 +146,13 @@ getActivity <- function(Clust) {
 
 setkey(location, imei, day, hour)
 location[, TourDiff := cumsum(TourIndex)]
-location[, activity := getActivity(.SD), by = TourDiff]
-location[, motif := paste(activity, collapse = '-'), by = TourDiff]
-location[TourIndex != 1, motif := NA]
+location[, activityNum := getActivity(.SD), by = TourDiff]
+location[, tour := paste(activityNum, collapse = '-'), by = TourDiff]
+location[TourIndex != 1, tour := NA]
 location[, c("TourIndex", "TourDiff") := NULL]
-location <- location[is.na(motif) | motif != "1", ] # 删除只有1个activty的tour
+location <- location[is.na(tour) | tour != "1", ] # 删除只有1个activty的tour
 
-# generate activity & HW/HO motif
+# generate HW/HO tour
 getActivity <- function(Clust) {
   Activity <- vector()
   Activity[1] <- 1
@@ -184,32 +182,82 @@ getActivity <- function(Clust) {
 setkey(location, imei, day, hour)
 location[, TourDiff := cumsum(TourIndex)]
 location[, activity := getActivity(.SD), by = TourDiff]
-location[, motif := paste(activity, collapse = '-'), by = TourDiff]
-location[TourIndex != 1, motif := NA]
+location[, tour := paste(activity, collapse = '-'), by = TourDiff]
+location[TourIndex != 1, tour := NA]
 location[, c("TourIndex", "TourDiff") := NULL]
-location <- location[is.na(motif) | motif != "1", ] # 删除只有1个activty的tour
+location <- location[is.na(tour) | tour != "1", ] # 删除只有1个activty的tour
 
-# generate motif type
-location[!is.na(motif), motifType1 := ifelse(nchar(motif) > 3, "C", "S")] 
-location[!is.na(motif), motifType2 := ifelse(grepl("2", motif), "HW", "HO")]
-location[!is.na(motif), motifType := paste0(motifType1, motifType2)] 
-location[, c("motifType1", "motifType2") := .(NULL, NULL)]
-
-# view motif
-sort(table(location[, motif]))
-length(location[!is.na(motif), motif]) # 11485
-length(location[!is.na(motif) & grepl("2", motif), motif]) # 4665
-length(unique(location[!is.na(motif), motif])) # 506
-length(unique(location[!is.na(motif) & grepl("2", motif), motif])) # 374
-table(location[, motifType]) # CHO CHW SHO SHW 2366 2499 3907 2058
+# generate tour type
+location[!is.na(tour), tourType1 := ifelse(nchar(tour) > 3, "C", "S")] 
+location[!is.na(tour), tourType2 := ifelse(grepl("2", tour), "HW", "HO")]
+location[!is.na(tour), tourType := paste0(tourType1, tourType2)] 
+location[, c("tourType1", "tourType2") := .(NULL, NULL)]
 
 # generate pattern
-location[!is.na(motifType), pattern := paste(motifType, collapse = '-'), by =.(imei, modelDay)]
+getPattern <- function(Clust) {
+  Activity <- vector()
+  Activity[1] <- 1
+  j <- 2
+  if (nrow(Clust) == 1) {
+    return(Activity)
+  }
+  else {
+    for (i in 2 : nrow(Clust)) {
+      if (!is.na(Clust[i, home])) {
+        Activity[i] <- 1
+      }
+      else {
+        if (!is.na(Clust[i, work])) {
+          Activity[i] <- 2
+        }
+        else {
+          if (Clust[i, Clust] %in% Clust[1 : i - 1, Clust]) {
+            Activity[i] <- Activity[match(Clust[i, Clust], Clust[1 : i - 1, Clust])]
+          }
+          else {
+            j <- j + 1
+            Activity[i] <- j
+          }
+        }
+      }
+    }
+  }
+  return(Activity)
+}
+
+setkey(location, imei, day, hour)
+location[, activity := getPattern(.SD), by = .(imei, modelDay)]
+location[, pattern := paste(activity, collapse = '-'), by = .(imei, modelDay)]
+location[, activity := NULL]
 location[hour != 3, pattern := NA]
 
+# generate pattern type
+location[!is.na(tourType), patternType := paste(tourType, collapse = '-'), by =.(imei, modelDay)]
+location[hour != 3, patternType := NA]
+
 # view pattern
-sort(table(location[, pattern]), decreasing = TRUE)
-save.image("final.RData")
+sort(table(location[, pattern]))
+location[!is.na(pattern), .N] # pattern数量
+length(unique(location[!is.na(pattern), pattern])) # pattern种类数
+sort(table(location[, patternType]), decreasing = TRUE)
+
+# view tour
+sort(table(location[, tour]))
+location[!is.na(tour), .N] # tour数量
+location[!is.na(tour), .N, by = modelDay] # tour数量 by modelDay
+location[!is.na(tour) & grepl("2", tour), .N] # work-tour数量
+location[!is.na(tour) & grepl("2", tour), .N, by = modelDay] # work-tour数量 by modelDay
+length(unique(location[!is.na(tour), tour])) # tour种类数
+length(unique(location[!is.na(tour) & grepl("2", tour), tour])) # work-tour种类数
+table(location[, tourType]) # CHO CHW SHO SHW
+
+# view trips
+mean(location[, .N, by = .(imei, modelDay)][N == 1, N := 0][, N])
+mean(location[, .N, by = .(imei, modelDay)][N > 1, N])
+location[, .N, by = .(imei, modelDay)][N == 1, N := 0][, mean(N), by = modelDay]
+table(location[, .N, by = .(imei, modelDay)][N == 1, N := 0][, N])
+ggplot(data = location[, .N, by = .(imei, modelDay)][N == 1, N := 0], aes(x = N)) + geom_histogram(binwidth = 1)
+
 
 
 # 样本 "20151228" 不能完全排除中途点
