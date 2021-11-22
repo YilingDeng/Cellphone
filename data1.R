@@ -14,7 +14,7 @@ setkey(location, V2, V1)
 # sample
 location <- location[1 : 10001, ]
 length(unique(location$V2)) # 1128
-save.image()
+save.image("sample.RData")
 
 # wide data to long data
 day <- strptime(location$V1, "%Y%m%d")
@@ -41,7 +41,7 @@ rm(lat, lng, day)
 
 # 20160106 特别少，删除，减少数据量 58877240 -> 55471159
 location <- location[modelDay != 360 & modelDay != 6, ]
-# save.image()
+save.image("initial.RData")
 
 # 检查小时、天、imei的记录数量
 byHour <- location[, .N, by = hour]
@@ -71,6 +71,8 @@ proj4string(coords) <- CRS("+init=epsg:4326")
 coords <- spTransform(coords, CRS("+init=epsg:2335"))
 coords <- data.table(coordinates(coords), coords@data)
 # write.csv(coords, "coords.csv")
+# coords <- read.csv("coords.csv")
+# coords <- coords[, -1]
 location <- merge(location, coords, by = c("lng", "lat"))
 setkey(location, imei, day, hour)
 
@@ -117,8 +119,11 @@ setkey(location, imei, day, hour)
 od <- location[!is.na(home) | !is.na(work), .(imei, x, y, home, work)]
 od <- unique(od)
 od[, type := ifelse(is.na(work), "home", "work")]
-# ggplot(data = od, aes(x = x, y = y, group = type)) + geom_point(aes(color = type)) + geom_path(alpha = 0.2)
-
+od <- merge(od, coords, by = c("lng", "lat"))
+od <- merge(od, coords, by = c("lng", "lat"))
+# write.csv(od, "od.csv")
+# ggplot(data = od, aes(x = lng, y = lat, group = type)) + geom_point(aes(color = type)) + geom_path(alpha = 0.2)
+save.image("result.RData")
 # insert start home
 homeStart <- data.table(lng = rep(NA, 10), lat = rep(NA, 10), day = c("20151227", "20151228","20151229","20151230","20151231","20160101","20160102","20160103","20160104","20160105"), 
                       yday = c(361, 362, 363, 364, 365, 1, 2, 3, 4, 5), 
